@@ -1,0 +1,250 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+<% 
+/*** クラス宣言の全体にあたる記述 ***/
+// クラスの宣言の行 %>\
+// ${u.name} クラス
+${getVisibility(u.iclass)} ${isAbstract(u.iclass)}class ${u.name}${getTemplateType(u.iclass)}${getBaseInterfaceDef(u.iclass)}{
+
+<%// 関連 %>\
+	/*** 関連 ***/
+<%for(p in u.iclass.attributes){%>\
+<%if(p.association != null){ // 関連の属性ならば、
+if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
+	${getVisibility(p)} ${getAttType(p)} ${getAttributeName(p)};
+<%}}%>\
+<%}%>\
+
+<%// 属性 %>\
+	/*** 属性 ***/
+<%for(p in u.iclass.attributes){%>\
+<%if(p.association == null){ // 関連でない属性ならば、 %>\
+	${isStatic(p)}private ${getAttType(p)} ${getPropetyFieldName(p)} ${getAttCreate(p)} ${getAttInit(p)};<% // プロパティのprivate変数 %>
+	${getVisibility(p)} ${getAttType(p)} ${getPropertyName(p)}<% // プロパティ %>
+	{
+		set { ${getPropetyFieldName(p)} = value; }
+		get { return ${getPropetyFieldName(p)}; }
+	}
+<%}%>\
+<%}%>\
+
+<%// 操作 %>\
+	/*** 操作 ***/
+<%for(m in u.iclass.operations){%>\
+	${isStatic(m)}${isAbstract(m)}${getVisibility(m)} ${getReturnType(m)} ${m.name}(${extractParams(m.parameters)})
+	{${getDefinition(m)} <% // タブはサブルーチン内で付けているので、この行にはタブを付けません %>	}
+<%}%>\
+}
+
+<%/*** クラス宣言の全体にあたる記述から呼び出されるサブルーチン群 ***/
+import com.change_vision.jude.api.inf.model.IMultiplicityRange
+// 可視性をの文字列を返す
+def getVisibility(m){
+	if(m.publicVisibility) return "public";
+	if(m.protectedVisibility) return "protected";
+	if(m.privateVisibility) return "private";
+	return ""; // package visibility	
+}
+// abstractなら文字列を返す
+def isAbstract(c){
+	c.abstract ? "abstract ":""
+}
+// staticなら文字列を返す
+def isStatic(m){
+	m.static ? "static ":""
+}
+// クラスのテンプレートの型を返す
+def getTemplateType(c){
+	if(c.templateParameters.length > 0 ){
+		return "<" + c.templateParameters.collect{it.name}.join(",") + ">";
+	}
+	return "";
+}
+// クラスの宣言のベースクラスとインタフェースクラスの文字列を生成
+def getBaseInterfaceDef(c){
+	StringBuilder buff = new StringBuilder();
+	if((c.generalizations.length == 0)&&(c.clientRealizations.length == 0)){
+		// なければ、空文字列を返す
+		return "";
+	} else {
+		// あれば、文字列を作る
+		buff.append(": ");
+		buff.append(c.generalizations.collect{it.superType.name}.join(", ")); // ベースクラス
+		if((c.generalizations.length != 0) && (c.clientRealizations.length != 0)){
+			buff.append(", ");
+		}
+		if(c.clientRealizations.length != 0){
+			buff.append(c.clientRealizations.collect{it.supplier.name}.join(", ")); // インタフェースクラス
+		}
+	}
+	return buff.toString();
+}
+// 操作の引数リストを作成
+def extractParams(params){
+	params.collect{getInOut(it)+convertCSType(it.type.name)+" "+it.name}.join(", ")
+}
+// 操作の引数のinoutをC#の文字列に変換する
+def getInOut(p){
+	if( p.direction.equals("out") ){ return "out "; }
+	if( p.direction.equals("inout") ){ return "ref "; }
+	return "";
+}
+// 操作の戻り値をC#の型に変換する
+def getReturnType(m){
+	return convertCSType(m.returnType.name);
+}
+// 属性の情報から多重度を含めたC#の型を生成する
+def getAttType(p){
+	if(isList(p)){
+		return "List<" + convertCSType(p.type.name) + ">";
+	} else {
+		return convertCSType(p.type.name);
+	}
+}
+// 属性の情報からC#のnew文字列を生成する
+def getAttCreate(p){
+	// 型がプリミティブ型ではないならば、new の文字列を追加する
+	if( isCSharpPrimitiveType(convertCSType(p.type.name)) == false ){
+		// リストである
+		if( isList(p) ){
+			return "= new List<" + convertCSType(p.type.name) + ">()";
+		} else {
+			return "= new " + convertCSType(p.type.name) + "()";
+		}
+	} else {
+		// リストである
+		if( isList(p) ){
+			return "= new List<" + convertCSType(p.type.name) + ">()";
+		}
+	}
+	return "";
+}
+// 属性の情報からC#の初期化文字列を生成する
+def getAttInit(p){
+	// 初期値がない
+	if(p.initialValue.equals("")){
+		return "";
+	} else {
+		// 型がプリミティブ型ではないならば、{ 初期値 } を生成、リストの時も { }を生成
+		String csTypeName = convertCSType(p.type.name);
+		if( isCSharpPrimitiveType(csTypeName) == false || isList(p) ){
+			return " {" + p.initialValue + "}";
+		} else {
+			// 型がプリミティブ型の場合は、型に応じて 初期値にサフィックスを付ける
+			// https://dobon.net/vb/dotnet/beginner/literals.html を参考にした
+			// http://park1.wakwak.com/~ima/dotnet_cs_datatypes.html を参考にした
+			// ただし、リストの時は、サフィックスまではサポートしていない
+			if(csTypeName.equals("char") || csTypeName.equals("Char")){
+				// charは、'A'のように
+				return "= " + "'" + p.initialValue + "'";
+			}
+			if(csTypeName.equals("long") ||csTypeName.equals("Int64")){
+				// longは、5Lのように
+				return "= " + p.initialValue + "L";
+			}
+			if(csTypeName.equals("ulong") ||csTypeName.equals("UInt64")){
+				// ulongは、5ulのように
+				return "= " + p.initialValue + "ul";
+			}
+			if(csTypeName.equals("float") ||csTypeName.equals("Single")){
+				// floatは、1.0fのように
+				return "= " + p.initialValue + "f";
+			}
+			if(csTypeName.equals("double") || csTypeName.equals("Double")){
+				// uintは、0.5dのように
+				return "= " + p.initialValue + "d";
+			}
+			if(csTypeName.equals("uint") ||csTypeName.equals("UInt32")){
+				// uintは、5uのように
+				return "= " + p.initialValue + "u";
+			}
+			if(csTypeName.equals("decimal") || csTypeName.equals("Decimal")){
+				// uintは、0.5mのように
+				return "= " + p.initialValue + "m";
+			}
+			// それ以外の型は、サフィックスなし
+			return "= " + p.initialValue;
+		}
+	}
+}
+// 属性の情報から属性名を取得or生成する
+def getAttributeName(p){
+	if(p.name.equals(""))
+	{
+		// 名前がなければ、型の先頭文字を大文字にして返す。
+		return "please_give_here_name_" + p.type;
+	} else {
+		return p.name;
+	}
+}
+// 属性の情報からプロパティ名を取得or生成する
+def getPropertyName(p){
+	if(p.name.equals(""))
+	{
+		// 名前がなければ、型の先頭文字を大文字にして返す。
+		return "please_give_here_name_" + p.type;
+	} else {
+		return p.name;
+	}
+}
+// 属性の情報からプロパティのフィールド名を取得or生成する
+def getPropetyFieldName(p){
+	return "pri_" + getPropertyName(p); // プロパティのフィールドの命名を変えたいときはココ
+}
+// 操作の定義にタブを加えて取得
+def getDefinition(m){
+    StringBuilder buff = new StringBuilder();
+    String str = m.definition;
+    String[] lines = str.split("\n");
+    for (String line : lines)
+    {
+        buff.append("\r\n\t\t" + line );
+    }
+    buff.append("\r\n");
+    return buff.toString();
+}
+// 属性の多重度が複数か判断する
+def Boolean isList(_att)
+{
+    for (IMultiplicityRange mult : _att.multiplicity)
+    {
+    	if( mult.upper == 1 ){ return false; }
+    	// -1は、多重度 * , 2以上は多重度あり
+    	return true;
+    }
+    return false;
+}
+// C#のプリミティブ型かどうか判断する
+def Boolean isCSharpPrimitiveType(t)
+{
+    if (t.equals("byte")||t.equals("Byte")
+     ||t.equals("sbyte")||t.equals("SByte")
+     ||t.equals("int")||t.equals("Int32")
+     ||t.equals("uint")||t.equals("UInt32")
+     ||t.equals("short")||t.equals("Int16")
+     ||t.equals("ushort")||t.equals("UInt16")
+     ||t.equals("long")||t.equals("Int64")
+     ||t.equals("ulong")||t.equals("UInt64")
+     ||t.equals("float")||t.equals("Single")
+     ||t.equals("double")||t.equals("Double")
+     ||t.equals("char")||t.equals("Char")
+     ||t.equals("bool")||t.equals("Boolean"))
+    {
+        return true;
+    }
+    return false;
+}
+// Javaの型を使っていた場合のための型変換
+def convertCSType(t)
+{
+    if (t.equals("boolean"))
+    {
+        return "bool";
+    }
+    return t;
+}
+%>\

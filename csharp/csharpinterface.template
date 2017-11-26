@@ -1,0 +1,111 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+<%/*** クラス宣言の全体にあたる記述 ***/
+// クラスの宣言の行 %>\
+// ${u.name} クラス
+${getVisibility(u.iclass)} interface ${u.name}${getBaseInterfaceDef(u.iclass)}{
+
+<%// 属性 %>\
+	/*** 属性 ***/
+<%for(p in u.iclass.attributes){%>\
+<%if(p.association == null){ // 関連でない属性ならば、 %>\
+	${getAttType(p)} ${getPropertyName(p)}{ set; get; }<% // プロパティ %>
+<%}%>\
+<%}%>\
+
+<%// 操作 %>\
+	/*** 操作 ***/
+<%for(m in u.iclass.operations){%>\
+	${m.returnType} ${m.name}(${extractParams(m.parameters)});
+<%}%>\
+}
+<%/*** クラス宣言の全体にあたる記述から呼び出されるサブルーチン群 ***/
+import com.change_vision.jude.api.inf.model.IMultiplicityRange
+// 可視性をの文字列を返す
+def getVisibility(m){
+	if(m.publicVisibility) return "public";
+	return ""; // package visibility	
+}
+// クラスの宣言のベースクラスとインタフェースクラスの文字列を生成
+def getBaseInterfaceDef(c){
+	if(c.clientRealizations.length == 0){
+		// なければ、空文字列を返す
+		return "";
+	} else {
+		// あれば、文字列を作る
+		return ":" + c.clientRealizations.collect{it.supplier.name}.join(", "); // インタフェースクラス
+	}
+}
+// 操作の引数リストを作成
+def extractParams(params){
+	params.collect{getInOut(it)+convertCSType(it.type.name)+" "+it.name}.join(", ")
+}
+// 操作の引数のinoutをC#の文字列に変換する
+def getInOut(p){
+	if( p.direction.equals("out") ){ return "out "; }
+	if( p.direction.equals("inout") ){ return "ref "; }
+	return "";
+}
+// 属性の情報から多重度を含めたC#の型を生成する
+def getAttType(p){
+	if(isList(p)){
+		return "List<" + convertCSType(p.type.name) + ">";
+	} else {
+		return convertCSType(p.type.name);
+	}
+}
+// 属性の情報からプロパティ名を取得or生成する
+def getPropertyName(p){
+	if(p.name.equals(""))
+	{
+		// 名前がなければ、型の先頭文字を大文字にして返す。
+		return "please_give_here_name_" + p.type;
+	} else {
+		return p.name;
+	}
+}
+// 属性の多重度が複数か判断する
+def Boolean isList(_att)
+{
+    for (IMultiplicityRange mult : _att.multiplicity)
+    {
+    	if( mult.upper == 1 ){ return false; }
+    	// -1は、多重度 * , 2以上は多重度あり
+    	return true;
+    }
+    return false;
+}
+// C#のプリミティブ型かどうか判断する
+def Boolean isCSharpPrimitiveType(t)
+{
+    if (t.equals("byte")||t.equals("Byte")
+     ||t.equals("sbyte")||t.equals("SByte")
+     ||t.equals("int")||t.equals("Int32")
+     ||t.equals("uint")||t.equals("UInt32")
+     ||t.equals("short")||t.equals("Int16")
+     ||t.equals("ushort")||t.equals("UInt16")
+     ||t.equals("long")||t.equals("Int64")
+     ||t.equals("ulong")||t.equals("UInt64")
+     ||t.equals("float")||t.equals("Single")
+     ||t.equals("double")||t.equals("Double")
+     ||t.equals("char")||t.equals("Char")
+     ||t.equals("bool")||t.equals("Boolean"))
+    {
+        return true;
+    }
+    return false;
+}
+// Javaの型を使っていた場合のための型変換
+def convertCSType(t)
+{
+    if (t.equals("boolean"))
+    {
+        return "bool";
+    }
+    return t;
+}
+%>\
