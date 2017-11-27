@@ -17,9 +17,9 @@ ${getVisibility(u.iclass)} ${isAbstract(u.iclass)}class ${u.name}${getTemplateTy
 <%if(p.association != null){ // 関連の属性ならば、
 if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
 <%if(isFixedNo(p)){ // 多重度のMinとMaxが同じならば、FixedAssociationを使う %>\
-	${getVisibility(p)} FixedAssociation<${convertCSType(p.type.name)}> ${getAttributeName(p)} = new FixedAssociation<${convertCSType(p.type.name)}>(${getAggregation(u.iclass.name,p)},${getAssociationMin(p)});
+	${getVisibility(p)} FixedAssociation<${convertCSType(p.type.name)}> ${getAttributeName(p)};
 <%} else { // 多重度のMinとMaxが違うので、普通のAssociationを使う %>\
-	${getVisibility(p)} Association<${convertCSType(p.type.name)}> ${getAttributeName(p)} = new Association<${convertCSType(p.type.name)}>(${getAggregation(u.iclass.name,p)},${getAssociationMin(p)},${getAssociationMax(p)});
+	${getVisibility(p)} Association<${convertCSType(p.type.name)}> ${getAttributeName(p)};
 <%}%>\
 <%}}%>\
 <%}%>\
