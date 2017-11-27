@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Azuki.UML;
 
 <% 
 /*** クラス宣言の全体にあたる記述 ***/
@@ -15,7 +16,11 @@ ${getVisibility(u.iclass)} ${isAbstract(u.iclass)}class ${u.name}${getTemplateTy
 <%for(p in u.iclass.attributes){%>\
 <%if(p.association != null){ // 関連の属性ならば、
 if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
-	${getVisibility(p)} ${getAttType(p)} ${getAttributeName(p)};
+<%if(isFixedNo(p)){ // 多重度のMinとMaxが同じならば、FixedAssociationを使う %>\
+	${getVisibility(p)} FixedAssociation<${convertCSType(p.type.name)}> ${getAttributeName(p)} = new FixedAssociation<${convertCSType(p.type.name)}>(${getAggregation(u.iclass.name,p)},${getAssociationMin(p)});
+<%} else { // 多重度のMinとMaxが違うので、普通のAssociationを使う %>\
+	${getVisibility(p)} Association<${convertCSType(p.type.name)}> ${getAttributeName(p)} = new Association<${convertCSType(p.type.name)}>(${getAggregation(u.iclass.name,p)},${getAssociationMin(p)},${getAssociationMax(p)});
+<%}%>\
 <%}}%>\
 <%}%>\
 
@@ -32,6 +37,22 @@ if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
 <%}%>\
 <%}%>\
 
+<%// コンストラクタ %>\
+	/*** コンストラクタ ***/
+	public ${u.name}(){
+		// 関連の初期化
+<%for(p in u.iclass.attributes){%>\
+<%if(p.association != null){ // 関連の属性ならば、
+if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
+<%if(isFixedNo(p)){ // 多重度のMinとMaxが同じならば、FixedAssociationを使う %>\
+		${getAttributeName(p)} = new FixedAssociation<${convertCSType(p.type.name)}>(${getAggregation(u.iclass.name,p)},${getAssociationMin(p)});
+<%} else { // 多重度のMinとMaxが違うので、普通のAssociationを使う %>\
+		${getAttributeName(p)} = new Association<${convertCSType(p.type.name)}>(${getAggregation(u.iclass.name,p)},${getAssociationMin(p)},${getAssociationMax(p)});
+<%}%>\
+<%}}%>\
+<%}%>\
+	}
+
 <%// 操作 %>\
 	/*** 操作 ***/
 <%for(m in u.iclass.operations){%>\
@@ -42,6 +63,7 @@ if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
 
 <%/*** クラス宣言の全体にあたる記述から呼び出されるサブルーチン群 ***/
 import com.change_vision.jude.api.inf.model.IMultiplicityRange
+import com.change_vision.jude.api.inf.model.IAttribute
 // 可視性をの文字列を返す
 def getVisibility(m){
 	if(m.publicVisibility) return "public";
@@ -104,6 +126,37 @@ def getAttType(p){
 	} else {
 		return convertCSType(p.type.name);
 	}
+}
+// 関連の集約を取得する
+def getAggregation(c,p){
+    for(IAttribute memberEnd : p.getAssociation().getMemberEnds()){
+        if(memberEnd.type!=c){  // 引いた方向によって、関連端の順序が変わるため、このような処理が必要です。
+        	if( memberEnd.composite ){
+        		return "AggreKindEnum.Composite";
+        	}
+        	if( memberEnd.aggregate ){
+        		return "AggreKindEnum.Shared";
+        	}
+        	return "AggreKindEnum.None";
+        }
+    }
+    return "";
+}
+// 関連の多重度minを取得する
+def getAssociationMin(p){
+    for (IMultiplicityRange mult : p.multiplicity)
+    {
+    	return mult.lower;
+    }
+    return "0";
+}
+// 関連の多重度maxを取得する
+def getAssociationMax(p){
+    for (IMultiplicityRange mult : p.multiplicity)
+    {
+    	return mult.upper;
+    }
+    return "0";
 }
 // 属性の情報からC#のnew文字列を生成する
 def getAttCreate(p){
@@ -215,6 +268,15 @@ def Boolean isList(_att)
     	if( mult.upper == 1 ){ return false; }
     	// -1は、多重度 * , 2以上は多重度あり
     	return true;
+    }
+    return false;
+}
+// 属性の多重度が固定か判断する
+def Boolean isFixedNo(_att)
+{
+    for (IMultiplicityRange mult : _att.multiplicity)
+    {
+    	if( mult.upper == mult.lower ){ return true; }
     }
     return false;
 }
