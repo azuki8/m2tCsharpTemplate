@@ -1,3 +1,13 @@
+<% import com.change_vision.jude.api.inf.model.* %>\
+<% import java.util.regex.Matcher %>\
+<% def stateInstance = u.instanceName+"_state"%>\
+<% def eventInstance = u.instanceName+"_event"%>\
+<% def getStateName(state){u.name+"::"+state.name}%>\
+<% def getEventName(event){u.name+"_"}%>\
+<% def replaceAct(act){
+	if(act=~"setNextTimeout\\((\\d+)(,.+)?\\)"){
+		"timer->setNextTimeout("+Matcher.getLastMatcher().group(1)+","+u.name+"_Timeout)"
+	}else{act.trim();}}%>\
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -37,6 +47,13 @@ if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
 <%}%>\
 <%}%>\
 
+<%// 状態変数 %>\
+	/*** 状態変数 ***/
+<%for(stm in getStateMachines(u.iclass)){%>\
+	enum ${stateEnumName(stm)} { ${makeStateList(stm)} };
+	private ${stateEnumName(stm)} ${stateVariableName(stm)};
+<%}%>\
+
 <%// コンストラクタ %>\
 	/*** コンストラクタ ***/
 	public ${u.name}(){
@@ -57,13 +74,82 @@ if(p.name != ""){ // 関連端名が空でなければ、関連を作る %>\
 	/*** 操作 ***/
 <%for(m in u.iclass.operations){%>\
 	${isStatic(m)}${isAbstract(m)}${getVisibility(m)} ${getReturnType(m)} ${m.name}(${extractParams(m.parameters)})
+<% if(HasStateMachine(u.iclass) == false ){ %>\
 	{${getDefinition(m)} <% // タブはサブルーチン内で付けているので、この行にはタブを付けません %>	}
+<%} else {%>\
+	{
+<%for(stm in getStateMachines(u.iclass)){%>\
+		switch( ${stateVariableName(stm)} ){
+<%for(state in getStateList(stm)){%>\
+			case  ${state.name}:
+<% def Boolean firstGuard = true; %>\
+<% for(t in state.outgoings){%>\
+<% if ( t.event == m.name ){ %>\
+<% if ( t.guard != "" ){ %>\
+<% if ( firstGuard == true ){ firstGuard = false; %>\
+				if( ${t.guard} ){
+<%} else {%>\
+				else if( ${t.guard} ){
+<%}%>\
+	<%}%>\
+				exit${state.name}();
+<% if ( t.action != "" ){ %>\
+<% if ( t.guard != "" ){ %>\
+	\
+<%}%>\
+				${t.action};
+<%}%>\
+<% if ( t.guard != "" ){ %>\
+	\
+<%}%>\
+				entry${t.target.name}();
+<% if ( t.guard != "" ){ %>\
+	\
+<%}%>\
+				do${t.target.name}();
+<% if ( t.guard != "" ){ %>\
+				}
+<%}%>\
+<%}%>\
+<%}%>\
+				break;
+<%}%>\
+			default:
+				throw new ArgumentOutOfRangeException("${m.name} ${stateVariableName(stm)}");
+				break;
+		}
+		
+<%}%>\
+	}
+<%}%>\
+<%}%>\
+
+	/*** 状態遷移のコード ***/
+<%for(stm in getStateMachines(u.iclass)){%>\
+
+	/** ${stm.name}の状態 **/
+<%for(state in getStateList(stm)){%>\
+	// ${state.name}状態のentry/do/exit
+	private void ${entryFunctionName(stm,state)}()
+	{
+		${stateVariableName(stm)} = state.name;
+		${state.entry}
+	}
+	private void ${doFunctionName(stm,state)}()
+	{
+		${state.doActivity}
+	}
+	private void ${exitFunctionName(stm,state)}()
+	{
+		${state.exit}
+	}
+<%}%>\
 <%}%>\
 }
 
+
 <%/*** クラス宣言の全体にあたる記述から呼び出されるサブルーチン群 ***/
-import com.change_vision.jude.api.inf.model.IMultiplicityRange
-import com.change_vision.jude.api.inf.model.IAttribute
+import com.change_vision.jude.api.inf.model.IClass
 // 可視性をの文字列を返す
 def getVisibility(m){
 	if(m.publicVisibility) return "public";
@@ -308,5 +394,65 @@ def convertCSType(t)
         return "bool";
     }
     return t;
+}
+// 状態マシンを持っているか？
+def Boolean HasStateMachine(c){
+    for(IDiagram diagram : c.getDiagrams()) {
+	    if( diagram instanceof IStateMachineDiagram ){
+	        return true;
+	    }
+	}
+	return false;
+}
+
+// 状態マシンの配列を取得
+def List getStateMachines(c){
+	List stateMachines = new ArrayList();
+	
+    for(IDiagram diagram : c.getDiagrams()) {
+	    if( diagram instanceof IStateMachineDiagram ){
+	        IStateMachine stm = ((IStateMachineDiagram)diagram).getStateMachine();
+	        stateMachines.add(stm);
+	    }
+	}
+	return stateMachines;
+}
+// 状態マシンの状態を取得
+def List getStateList(IStateMachine stm){
+	List states = new ArrayList();
+
+    for(IVertex vertex : stm.getVertexes() ){
+        if( vertex instanceof IState ){
+        	if( !( vertex instanceof IFinalState ) ){
+            	IState state = (IState)vertex;
+            	states.add(state);
+            }
+        }
+    }
+    return states;
+}
+// カンマ区切りの状態のリスト文字列を返す
+def makeStateList(IStateMachine stm){
+	return getStateList(stm).collect{it.name}.join(", ").toString();
+}
+// 状態変数列挙体名を返す
+def stateEnumName(IStateMachine stm){
+	return stm.name + "States";
+}
+// 状態変数名を返す
+def stateVariableName(IStateMachine stm){
+	return "_" + stm.name;
+}
+// entry関数名を返す
+def entryFunctionName(IStateMachine stm,IState state){
+	return "entry" + stm.name + state.name;
+}
+// exit関数名を返す
+def exitFunctionName(IStateMachine stm,IState state){
+	return "exit" + stm.name + state.name;
+}
+// do関数名を返す
+def doFunctionName(IStateMachine stm,IState state){
+	return "do" + stm.name + state.name;
 }
 %>\
